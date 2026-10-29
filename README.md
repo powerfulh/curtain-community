@@ -4,16 +4,16 @@
 
 ## 빌드가 하는 일
 1. `POST /api/curtain/build/refresh` 로 서버가 최신 1만 건을 적재하게 하고
-2. `GET /api/curtain/build/{key}?offset=` 으로 전부 읽고 (최신순 그대로 사용)
+2. `GET /api/curtain/build/{key}?offset=` 을 0, 1000, 2000 … 으로 천 건씩 읽고 (최신순 그대로 사용. offset 기본값이 0이 아니라서 첫 호출도 `offset=0` 을 명시합니다)
 3. `GET /api/curtain/chart` 로 전체 기준 숫자(전체 글 수, 회사·주제별 전체 건수)를 가져옵니다.
-매번 최신 1만 건만으로 사이트를 새로 만들고, 이전 글은 누적하지 않습니다. 요청 수는 (1만 ÷ 페이지 크기) + 2 회 정도입니다.
+매번 최신 1만 건만으로 사이트를 새로 만들고, 이전 글은 누적하지 않습니다. 요청 수는 약 12회(refresh 1 + 조회 10 + chart 1)입니다.
 
 ## 사용법
 ```bash
 BUILD_KEY=키 node build.mjs      # Node 18+, 의존성 없음
 npx serve docs                   # 로컬 미리보기
 ```
-환경변수: `BUILD_KEY`(필수), `SITE_URL`, `API_BASE`, `PER_PAGE`(50), `MAX_POSTS`(10000), `CONCURRENCY`(3), `MIN_COMPANY_POSTS`(3), `OFFSET_MODE`(items|pages), `SKIP_REFRESH=1`, `POST_PAGES=1`
+환경변수: `BUILD_KEY`(필수), `SITE_URL`, `API_BASE`, `PER_PAGE`(50), `MAX_POSTS`(10000), `CONCURRENCY`(3), `MIN_COMPANY_POSTS`(3), `PAGE_SIZE`(1000), `SKIP_REFRESH=1`, `POST_PAGES=1`
 
 ## 배포 (GitHub Actions)
 1. Settings → Secrets and variables → Actions 에 `BUILD_KEY` 시크릿 추가
@@ -29,5 +29,5 @@ npx serve docs                   # 로컬 미리보기
 
 ## 알아둘 점
 - 글 ID는 "한 빌드 내에서만 유일"이라고 해서 글 단독 URL은 기본으로 끄고, 글은 목록 안에서 펼쳐 봅니다. 글 ID가 빌드 간에도 유지된다면 `POST_PAGES=1` 로 `/post/{id}/` 를 켤 수 있습니다.
-- `offset` 이 건너뛸 글 수가 아니라 페이지 번호라면 `OFFSET_MODE=pages` 로 바꾸세요. 수집 글이 기대보다 적으면 빌드 로그에 경고가 나옵니다.
+- 서버의 limit(1000)과 `PAGE_SIZE` 가 다르면 건너뛰는 글이 생기니 같게 유지하세요. 수집 글이 기대(1만 개)보다 적으면 빌드 로그에 경고가 나옵니다.
 - 인증 키는 로그와 오류 메시지에 출력되지 않습니다. 핵심 API가 실패하거나 비어 있으면 빌드가 실패해 기존 사이트가 유지됩니다.

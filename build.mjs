@@ -8,8 +8,8 @@
 //   BUILD_KEY=xxxx node build.mjs
 //
 // Env: BUILD_KEY (required), SITE_URL, API_BASE, SITE_NAME, OUT_DIR,
-//      PER_PAGE=50, MAX_POSTS=10000, CONCURRENCY=3, MIN_COMPANY_POSTS=3,
-//      OFFSET_MODE=items|pages, SKIP_REFRESH=1, POST_PAGES=1
+//      PER_PAGE=50, MAX_POSTS=10000, PAGE_SIZE=1000 (server-side LIMIT), CONCURRENCY=3,
+//      MIN_COMPANY_POSTS=3, SKIP_REFRESH=1, POST_PAGES=1
 
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -24,7 +24,7 @@ const PER_PAGE = Number(process.env.PER_PAGE || 50);
 const MAX_POSTS = Number(process.env.MAX_POSTS || 10000);
 const CONCURRENCY = Number(process.env.CONCURRENCY || 3);
 const MIN_COMPANY_POSTS = Number(process.env.MIN_COMPANY_POSTS || 3); // fewer -> noindex, no sitemap
-const OFFSET_MODE = process.env.OFFSET_MODE || 'items'; // 'items': offset skips N posts, 'pages': offset is a page index
+const PAGE_SIZE = Number(process.env.PAGE_SIZE || 1000); // server uses a fixed LIMIT 1000; offset is the SQL OFFSET
 const SKIP_REFRESH = process.env.SKIP_REFRESH === '1';
 const POST_PAGES = process.env.POST_PAGES === '1'; // standalone /post/{n}/ pages (only if post IDs are stable across builds)
 
@@ -56,24 +56,21 @@ const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // K
 // ---------- data ----------
 async function fetchPosts() {
   const seen = new Set(), posts = [];
+  // The server's default offset is not 0, so every call (including the first) passes offset explicitly.
   const page = off => call(`/api/curtain/build/${encodeURIComponent(KEY)}?offset=${off}`, { label: `build?offset=${off}` });
-  const take = (items, off) => {
-    let added = 0;
-    for (const p of items) { if (!seen.has(p.n)) { seen.add(p.n); posts.push(p); added++; } }
-    if (items.length && !added) throw new Error(`offset=${off}: no new posts returned. Check OFFSET_MODE (items|pages)`);
-  };
-  const first = await page(0);
-  if (!Array.isArray(first) || !first.length) throw new Error('build API returned no posts (check BUILD_KEY / refresh)');
-  take(first, 0);
-  const step = OFFSET_MODE === 'pages' ? 1 : first.length;
-  console.log(`page size ${first.length}, offset step ${step}`);
-  for (let k = 1; posts.length < MAX_POSTS; k += CONCURRENCY) {
-    const offs = Array.from({ length: CONCURRENCY }, (_, i) => (k + i) * step);
-    const res = await Promise.all(offs.map(page));
+  const offsets = Array.from({ length: Math.ceil(MAX_POSTS / PAGE_SIZE) }, (_, i) => i * PAGE_SIZE);
+  for (let i = 0; i < offsets.length; i += CONCURRENCY) {
+    const batch = offsets.slice(i, i + CONCURRENCY);
+    const res = await Promise.all(batch.map(page));
     let done = false;
-    res.forEach((items, i) => { if (!items.length) done = true; else take(items, offs[i]); });
+    res.forEach((items, k) => {
+      if (!Array.isArray(items)) throw new Error(`offset=${batch[k]}: unexpected response`);
+      for (const p of items) if (!seen.has(p.n)) { seen.add(p.n); posts.push(p); }
+      if (items.length < PAGE_SIZE) done = true; // last page
+    });
     if (done) break;
   }
+  if (!posts.length) throw new Error('build API returned no posts (check BUILD_KEY / refresh)');
   return posts.slice(0, MAX_POSTS);
 }
 
@@ -180,7 +177,7 @@ async function main() {
   const posts = await fetchPosts();
   const chart = await call('/api/curtain/chart').catch(e => { console.warn('chart unavailable:', e.message); return {}; });
   console.log('posts fetched:', posts.length);
-  if (posts.length < MAX_POSTS) console.warn(`expected ${MAX_POSTS} posts, got ${posts.length}. If the server has more, check OFFSET_MODE`);
+  if (posts.length < MAX_POSTS) console.warn(`expected ${MAX_POSTS} posts, got ${posts.length}`);
   if (latest != null && posts[0].n !== latest) console.warn(`newest post ${posts[0].n} differs from refresh result ${latest}`);
 
   // group (posts are newest first, so the first name seen is the current one)

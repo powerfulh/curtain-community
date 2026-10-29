@@ -11,7 +11,7 @@
 //      PER_PAGE=50, MAX_POSTS=10000, PAGE_SIZE=1000 (server-side LIMIT), CONCURRENCY=3,
 //      MIN_COMPANY_POSTS=3, SKIP_REFRESH=1, POST_PAGES=1
 
-import { mkdir, writeFile, rm, cp } from 'node:fs/promises';
+import { mkdir, writeFile, rm, cp, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const API = (process.env.API_BASE || 'https://port-0-powerful-spring-boot-5o1j2llh1wq9rp.sel4.cloudtype.app').replace(/\/$/, '');
@@ -119,6 +119,7 @@ footer{border-top:1px solid var(--line);color:var(--mut);font-size:13px;padding:
 `;
 
 // ---------- templates ----------
+let ICONS = []; // [file, rel, type] for icon files found in ./public
 function page({ depth = 0, route, title, desc, body, nav = '', noindex = false, root }) {
   root = root ?? (depth ? '../'.repeat(depth) : './');
   const full = title === NAME ? NAME : `${title} - ${NAME}`;
@@ -136,6 +137,7 @@ ${noindex ? '<meta name="robots" content="noindex,follow">\n' : `<link rel="cano
 <meta property="og:title" content="${esc(full)}">
 <meta property="og:description" content="${esc(clip(desc, 150))}">
 <link rel="stylesheet" href="${root}style.css">
+${ICONS.map(([f, rel, type]) => `<link rel="${rel}"${type ? ` type="${type}"` : ''} href="${root}${f}">`).join('\n')}
 </head>
 <body>
 <header class="top"><div class="wrap"><a class="brand" href="${root}">${esc(NAME)}</a><nav class="main">${links}</nav></div></header>
@@ -206,6 +208,8 @@ async function main() {
   await mkdir(OUT, { recursive: true });
   // files in ./public are copied to the site root as-is (e.g. the Search Console verification file)
   await cp('public', OUT, { recursive: true }).catch(e => { if (e.code !== 'ENOENT') throw e; });
+  for (const [f, rel, type] of [['favicon.ico', 'icon', null], ['favicon.svg', 'icon', 'image/svg+xml'], ['favicon.png', 'icon', 'image/png'], ['apple-touch-icon.png', 'apple-touch-icon', null]])
+    if (await stat(path.join(OUT, f)).then(() => true, () => false)) ICONS.push([f, rel, type]);
   await writeFile(path.join(OUT, 'style.css'), CSS.trim() + '\n');
   await writeFile(path.join(OUT, '.nojekyll'), '');
 

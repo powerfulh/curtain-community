@@ -26,6 +26,8 @@ npx serve docs                   # 로컬 미리보기
 ## 정적 파일 (`public/`)
 `public/` 안의 파일은 빌드 때마다 사이트 루트로 그대로 복사됩니다. 빌드가 `docs/` 를 매번 비우기 때문에, 서치콘솔 소유권 확인 파일(`googlee2c95d9060f48724.html`)도 여기에 둡니다. 배포 후 `https://powerfulh.github.io/curtain-community/googlee2c95d9060f48724.html` 로 열리는지 확인하세요.
 
+파비콘: `public/` 에 `favicon.ico`, `favicon.svg`, `favicon.png`, `apple-touch-icon.png` 중 있는 파일을 두면 모든 페이지의 `<head>` 에 자동으로 링크됩니다. `public/` 이나 `build.mjs` 를 `main` 에 푸시하면 워크플로가 자동으로 다시 빌드합니다.
+
 ## 페이지
 `/` · `/feed/` `/feed/2/` … · `/companies/` · `/company/{회사ID}/` · `/topics/` · `/topic/{카테고리ID}/` · `404.html` · `sitemap.xml` · `robots.txt`
 목록은 모두 50개씩 페이지로 나뉘고, JS 없이 일반 링크로만 이동합니다. 글 3개 미만인 회사 페이지는 `noindex` 이며 sitemap 에서 빠집니다.

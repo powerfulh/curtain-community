@@ -3,7 +3,7 @@
 // 1) POST /api/curtain/build/refresh        -> server loads the latest 10,000 posts
 // 2) GET  /api/curtain/build/{key}?offset=  -> read them all (newest first)
 // 3) GET  /api/curtain/chart                -> overall totals (optional)
-// Then writes fully pre-rendered, multi-page static HTML into ./docs.
+// Then writes fully pre-rendered, multi-page static HTML into ./docs (plus everything in ./public).
 //
 //   BUILD_KEY=xxxx node build.mjs
 //
@@ -11,7 +11,7 @@
 //      PER_PAGE=50, MAX_POSTS=10000, PAGE_SIZE=1000 (server-side LIMIT), CONCURRENCY=3,
 //      MIN_COMPANY_POSTS=3, SKIP_REFRESH=1, POST_PAGES=1
 
-import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile, rm, cp } from 'node:fs/promises';
 import path from 'node:path';
 
 const API = (process.env.API_BASE || 'https://port-0-powerful-spring-boot-5o1j2llh1wq9rp.sel4.cloudtype.app').replace(/\/$/, '');
@@ -204,6 +204,8 @@ async function main() {
 
   await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
+  // files in ./public are copied to the site root as-is (e.g. the Search Console verification file)
+  await cp('public', OUT, { recursive: true }).catch(e => { if (e.code !== 'ENOENT') throw e; });
   await writeFile(path.join(OUT, 'style.css'), CSS.trim() + '\n');
   await writeFile(path.join(OUT, '.nojekyll'), '');
 

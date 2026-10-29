@@ -23,6 +23,9 @@ npx serve docs                   # 로컬 미리보기
 
 `docs/` 는 `main` 에 커밋하지 않고(`.gitignore`), 매 빌드마다 `pages` 브랜치를 단일 커밋으로 덮어씁니다. 매일 전체가 바뀌는 사이트라서 이력이 쌓여 저장소가 커지는 것을 막기 위해서입니다.
 
+## 정적 파일 (`public/`)
+`public/` 안의 파일은 빌드 때마다 사이트 루트로 그대로 복사됩니다. 빌드가 `docs/` 를 매번 비우기 때문에, 서치콘솔 소유권 확인 파일(`googlee2c95d9060f48724.html`)도 여기에 둡니다. 배포 후 `https://powerfulh.github.io/curtain-community/googlee2c95d9060f48724.html` 로 열리는지 확인하세요.
+
 ## 페이지
 `/` · `/feed/` `/feed/2/` … · `/companies/` · `/company/{회사ID}/` · `/topics/` · `/topic/{카테고리ID}/` · `404.html` · `sitemap.xml` · `robots.txt`
 목록은 모두 50개씩 페이지로 나뉘고, JS 없이 일반 링크로만 이동합니다. 글 3개 미만인 회사 페이지는 `noindex` 이며 sitemap 에서 빠집니다.

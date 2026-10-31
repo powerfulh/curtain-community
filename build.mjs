@@ -88,8 +88,8 @@ async function fetchPosts() {
 
 // ---------- styles ----------
 const CSS = `
-:root{color-scheme:light dark;--bg:#f7f6f9;--fg:#1d1a22;--mut:#6a6573;--card:#fff;--line:#e4e0ea;--ac:#7a2f68;--ac-soft:#f1e3ee;--bar:#b9689f}
-@media (prefers-color-scheme:dark){:root{--bg:#141118;--fg:#ece8f0;--mut:#a39cae;--card:#1c1822;--line:#2e2836;--ac:#e0a3d4;--ac-soft:#2b1f29;--bar:#a4508f}}
+:root{color-scheme:light dark;--bg:#f7f6f9;--fg:#1d1a22;--mut:#6a6573;--card:#fff;--line:#e4e0ea;--ac:#7a2f68;--ac-soft:#f1e3ee;--bar:#b9689f;--c0:#7a2f68;--c1:#3b6ea5;--c2:#c48a1f;--c3:#4a8c55;--c4:#b9503f;--c5:#6659b8;--c6:#1f8a8a;--c7:#c4608f;--c8:#8b8794}
+@media (prefers-color-scheme:dark){:root{--bg:#141118;--fg:#ece8f0;--mut:#a39cae;--card:#1c1822;--line:#2e2836;--ac:#e0a3d4;--ac-soft:#2b1f29;--bar:#a4508f;--c0:#e0a3d4;--c1:#7fb0e6;--c2:#e6b45a;--c3:#7ccb8a;--c4:#ee8f7e;--c5:#a89cf0;--c6:#62cfcf;--c7:#f09bc0;--c8:#8d8798}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 "Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
@@ -124,6 +124,19 @@ h2{font-size:18px;margin:36px 0 12px}
 .perma{margin:0;padding:0 16px 14px;font-size:13px}
 .pager{display:flex;gap:16px;justify-content:center;align-items:center;margin:22px 0 0;font-size:15px}
 .pager span{color:var(--mut)}
+.chartbox{overflow-x:auto;margin:8px 0}
+.chart{display:block;width:100%;min-width:520px;height:auto}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart text{fill:var(--mut);font-size:12px}
+.chart rect{stroke:var(--card);stroke-width:.5}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;margin:8px 0 0;padding:0;font-size:14px}
+.legend a{color:var(--fg)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+${Array.from({ length: 9 }, (_, i) => `.chart .s${i}{fill:var(--c${i})}.sw.s${i}{background:var(--c${i})}`).join('\n')}
+details.tbl summary{cursor:pointer;color:var(--ac);font-size:14px;margin-top:10px}
+.tbl table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+.tbl td,.tbl th{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left}
+.tbl td:last-child,.tbl th:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .more{margin-top:14px}.note{color:var(--mut);font-size:14px}
 .crumbs{font-size:14px;color:var(--mut);margin-bottom:10px}
 footer{border-top:1px solid var(--line);color:var(--mut);font-size:13px;padding:20px 0 40px}
@@ -179,6 +192,51 @@ const postHtml = (p, root) => {
 };
 const barRow = (href, label, count, max) =>
   `<li><a href="${href}"><span class="n">${esc(label)}</span><span class="bar" style="--w:${Math.max(1, Math.round(count / max * 100))}%"></span><span class="c">${num(count)}</span></a></li>`;
+
+// Server-rendered stacked bar chart (inline SVG, no JS): posts per day, stacked by topic.
+function dailyChart(posts, topicList, root, windowCut) {
+  const dayNum = s => Date.parse(s + 'T00:00:00Z') / 864e5;
+  const iso = n => new Date(n * 864e5).toISOString().slice(0, 10);
+  const valid = posts.filter(p => Number.isFinite(dayNum(p.d)));
+  if (!valid.length) return '';
+  let lo = Infinity, hi = -Infinity;
+  for (const p of valid) { const x = dayNum(p.d); if (x < lo) lo = x; if (x > hi) hi = x; }
+  const nDays = hi - lo + 1;
+  const top = topicList.slice(0, 8), sIdx = new Map(top.map((t, i) => [t.id, i]));
+  const names = top.map(t => t.name);
+  if (valid.some(p => !sIdx.has(p.cid))) names.push('기타');
+  const other = names.length - 1, S = names.length;
+  const cnt = Array.from({ length: nDays }, () => new Array(S).fill(0));
+  const sTotal = new Array(S).fill(0);
+  for (const p of valid) { const s = sIdx.get(p.cid) ?? other; cnt[dayNum(p.d) - lo][s]++; sTotal[s]++; }
+  const totals = cnt.map(r => r.reduce((a, b) => a + b, 0));
+  const max = Math.max(...totals), raw = max / 4, mag = 10 ** Math.floor(Math.log10(raw || 1));
+  const step = Math.max(1, [1, 2, 5, 10].map(m => m * mag).find(v => v >= raw));
+  const yMax = step * Math.ceil(max / step);
+  const W = 640, H = 280, L = 40, R = 8, T = 10, B = 26, pw = W - L - R, ph = H - T - B;
+  const slot = pw / nDays, bw = Math.max(1, slot * 0.78), yOf = v => T + ph - v / yMax * ph;
+  let g = '';
+  for (let v = 0; v <= yMax; v += step) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yOf(v)}" y2="${yOf(v)}"/><text x="${L - 6}" y="${yOf(v) + 4}" text-anchor="end">${num(v)}</text>`;
+  const lstep = Math.ceil(nDays / 8);
+  for (let i = 0; i < nDays; i++) {
+    const x = L + i * slot + (slot - bw) / 2, date = iso(lo + i);
+    let acc = 0;
+    for (let s = 0; s < S; s++) {
+      const c = cnt[i][s]; if (!c) continue;
+      g += `<rect class="s${s}" x="${x.toFixed(2)}" y="${yOf(acc + c).toFixed(2)}" width="${bw.toFixed(2)}" height="${(c / yMax * ph).toFixed(2)}"><title>${date} · ${esc(names[s])} ${num(c)}개</title></rect>`;
+      acc += c;
+    }
+    if (i % lstep === 0) g += `<text x="${(x + bw / 2).toFixed(2)}" y="${H - 8}" text-anchor="middle">${date.slice(5)}</text>`;
+  }
+  const a = iso(lo), b = iso(hi), peak = totals.indexOf(max);
+  const legend = names.map((n, s) => `<li><i class="sw s${s}"></i>${s < top.length ? `<a href="${root}topic/${top[s].id}/">${esc(n)}</a>` : esc(n)} <span class="note">${num(sTotal[s])}</span></li>`).join('');
+  const rows = totals.map((t, i) => `<tr><td>${iso(lo + i)}</td><td>${num(t)}</td></tr>`).reverse().join('');
+  return `<h2>일별 글 수 <span class="note">${a} ~ ${b} · ${num(nDays)}일</span></h2>
+<div class="chartbox"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${a}부터 ${b}까지 일별 글 수를 주제별로 쌓은 막대 차트">${g}</svg></div>
+<ul class="legend">${legend}</ul>
+<p class="note">하루 평균 ${(valid.length / nDays).toFixed(1)}개 · 가장 많았던 날 ${iso(lo + peak)} (${num(max)}개).${windowCut ? ` 가장 오래된 날(${a})은 최신 ${num(posts.length)}개의 경계라 일부만 집계됩니다.` : ''}</p>
+<details class="tbl"><summary>표로 보기</summary><table><thead><tr><th>날짜</th><th>글 수</th></tr></thead><tbody>${rows}</tbody></table></details>`;
+}
 
 // ---------- build ----------
 async function main() {
@@ -253,6 +311,7 @@ async function main() {
     body: `<h1>${esc(NAME)}</h1>
 <p class="lead">최신 글 ${num(posts.length)}개를 회사별·주제별로 모아봅니다.</p>
 <div class="stats"><div><b>${num(total.tc || posts.length)}</b><span>전체 글</span></div><div><b>${num(companies.size)}</b><span>회사 (최신 글 기준)</span></div><div><b>${esc(total.tmd || newest)}</b><span>마지막 글</span></div></div>
+${dailyChart(posts, topicList, './', posts.length >= MAX_POSTS)}
 <h2>글이 많은 회사 <span class="note">최신 ${num(posts.length)}개 기준</span></h2>
 <ul class="bars">${compList.slice(0, 15).map(c => barRow(cUrl('./', c.slug), c.name, c.posts.length, maxC)).join('\n')}</ul>
 <p class="more"><a href="companies/">회사 전체 보기</a></p>

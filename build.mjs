@@ -1,4 +1,5 @@
 // Curtain site generator (Node 18+, no dependencies).
+// Companies are identified by name (IDs are ignored); categories by cid.
 //
 // 1) POST /api/curtain/build/refresh        -> server loads the latest 10,000 posts
 // 2) GET  /api/curtain/build/{key}?offset=  -> read them all (newest first)
@@ -12,6 +13,7 @@
 //      MIN_COMPANY_POSTS=3, SKIP_REFRESH=1, POST_PAGES=1
 
 import { mkdir, writeFile, rm, cp, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const API = (process.env.API_BASE || 'https://port-0-powerful-spring-boot-5o1j2llh1wq9rp.sel4.cloudtype.app').replace(/\/$/, '');
@@ -51,6 +53,16 @@ async function call(p, { method = 'GET', label = p, tries = 4, timeout = 120000 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = n => Number(n || 0).toLocaleString('ko-KR');
 const clip = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+// Companies are identified by NAME (company IDs are not stable). The slug is the name itself when it is
+// URL/file safe, otherwise a sanitized prefix plus a short hash of the name, so it never depends on build order.
+const normName = s => String(s ?? '').normalize('NFC').trim();
+const slugOf = name => {
+  const clean = name.replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '');
+  if (clean === name && name.length <= 60) return name;
+  return `${(clean || 'x').slice(0, 40)}-${createHash('sha1').update(name).digest('hex').slice(0, 6)}`;
+};
+const encPath = r => r.split('/').map(encodeURIComponent).join('/'); // route -> URL path
+const cUrl = (root, slug) => `${root}company/${encodeURIComponent(slug)}/`;
 const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // KST
 
 // ---------- data ----------
@@ -133,7 +145,7 @@ function page({ depth = 0, route, title, desc, body, nav = '', noindex = false, 
 <meta name="color-scheme" content="light dark">
 <title>${esc(full)}</title>
 <meta name="description" content="${esc(clip(desc, 150))}">
-${noindex ? '<meta name="robots" content="noindex,follow">\n' : `<link rel="canonical" href="${esc(SITE + '/' + route)}">\n`}<meta property="og:type" content="website">
+${noindex ? '<meta name="robots" content="noindex,follow">\n' : `<link rel="canonical" href="${esc(SITE + '/' + encPath(route))}">\n`}<meta property="og:type" content="website">
 <meta property="og:title" content="${esc(full)}">
 <meta property="og:description" content="${esc(clip(desc, 150))}">
 <link rel="stylesheet" href="${root}style.css">
@@ -152,13 +164,13 @@ ${body}
 
 function pager(root, base, p, pages) {
   if (pages < 2) return '';
-  const u = n => `${root}${base ? base + '/' : ''}${n === 1 ? '' : n + '/'}`;
+  const u = n => `${root}${base ? encPath(base) + '/' : ''}${n === 1 ? '' : n + '/'}`;
   const a = (n, label, rel) => `<a href="${u(n)}"${rel ? ` rel="${rel}"` : ''}>${label}</a>`;
   return `<nav class="pager" aria-label="페이지 이동">${p > 1 ? a(1, '« 처음') + a(p - 1, '‹ 이전', 'prev') : ''}<span>${p} / ${pages}</span>${p < pages ? a(p + 1, '다음 ›', 'next') + a(pages, '끝 »') : ''}</nav>`;
 }
 
 const postHtml = (p, root) => {
-  const c = p.cpid != null ? `<a href="${root}company/${p.cpid}/">${esc(p.cp)}</a>` : esc(p.cp);
+  const c = p.cs ? `<a href="${cUrl(root, p.cs)}">${esc(p.cp)}</a>` : esc(p.cp);
   const t = p.cid != null ? `<a href="${root}topic/${p.cid}/">${esc(p.cn)}</a>` : esc(p.cn);
   const link = POST_PAGES ? `<p class="perma"><a href="${root}post/${p.n}/">이 글만 보기</a></p>` : '';
   return `<article class="post" id="p-${p.n}"><details><summary><span class="t">${esc(p.t)}</span>
@@ -185,9 +197,11 @@ async function main() {
   // group (posts are newest first, so the first name seen is the current one)
   const companies = new Map(), topics = new Map();
   for (const p of posts) {
-    if (p.cpid != null) {
-      let c = companies.get(p.cpid);
-      if (!c) companies.set(p.cpid, c = { id: p.cpid, name: p.cp, posts: [] });
+    p.cp = normName(p.cp);
+    if (p.cp) {
+      let c = companies.get(p.cp);
+      if (!c) companies.set(p.cp, c = { slug: slugOf(p.cp), name: p.cp, posts: [] });
+      p.cs = c.slug;
       c.posts.push(p);
     }
     if (p.cid != null) {
@@ -198,7 +212,7 @@ async function main() {
   }
   const compList = [...companies.values()].sort((a, b) => b.posts.length - a.posts.length);
   const topicList = [...topics.values()].sort((a, b) => b.posts.length - a.posts.length);
-  const compTotal = new Map((chart.comp || []).map(c => [c.cpn, c.cpc]));  // overall counts, matched by name (best effort)
+  const compTotal = new Map((chart.comp || []).map(c => [normName(c.cpn), c.cpc]));  // overall counts, matched by name (best effort)
   const topicTotal = new Map((chart.topic || []).map(t => [t.cnn, t.cnc]));
   const total = chart.total || {};
   const maxC = Math.max(1, ...compList.map(c => c.posts.length));
@@ -240,7 +254,7 @@ async function main() {
 <p class="lead">최신 글 ${num(posts.length)}개를 회사별·주제별로 모아봅니다.</p>
 <div class="stats"><div><b>${num(total.tc || posts.length)}</b><span>전체 글</span></div><div><b>${num(companies.size)}</b><span>회사 (최신 글 기준)</span></div><div><b>${esc(total.tmd || newest)}</b><span>마지막 글</span></div></div>
 <h2>글이 많은 회사 <span class="note">최신 ${num(posts.length)}개 기준</span></h2>
-<ul class="bars">${compList.slice(0, 15).map(c => barRow(`company/${c.id}/`, c.name, c.posts.length, maxC)).join('\n')}</ul>
+<ul class="bars">${compList.slice(0, 15).map(c => barRow(cUrl('./', c.slug), c.name, c.posts.length, maxC)).join('\n')}</ul>
 <p class="more"><a href="companies/">회사 전체 보기</a></p>
 <h2>주제</h2>
 <ul class="chips">${topicList.map(t => `<li><a class="chip" href="topic/${t.id}/">${esc(t.name)}<small>${num(t.posts.length)}</small></a></li>`).join('')}</ul>
@@ -260,12 +274,12 @@ ${slice.map(p => postHtml(p, root)).join('\n')}${pg}`
     title: '회사 목록' + sfx, nav: 'companies', lastmod: newest,
     desc: `최신 글에 등장한 ${num(companies.size)}개 회사, 글 수 순${sfx}.`,
     body: `<h1>회사 목록${esc(sfx)}</h1><p class="lead">최신 ${num(posts.length)}개 글 기준, 글이 많은 순서입니다.</p>
-<ul class="bars">${slice.map(c => barRow(`${root}company/${c.id}/`, c.name, c.posts.length, maxC)).join('\n')}</ul>${pg}`
+<ul class="bars">${slice.map(c => barRow(cUrl(root, c.slug), c.name, c.posts.length, maxC)).join('\n')}</ul>${pg}`
   }));
 
   for (const c of compList) {
     const thin = c.posts.length < MIN_COMPANY_POSTS, all = compTotal.get(c.name);
-    await paged(`company/${c.id}`, c.posts, ({ slice, root, sfx, pg }) => ({
+    await paged(`company/${c.slug}`, c.posts, ({ slice, root, sfx, pg }) => ({
       title: `${c.name} 글 모음` + sfx, noindex: thin, lastmod: c.posts[0].d,
       desc: `${c.name}의 최신 글 ${num(c.posts.length)}개. 최근 글: ${clip(c.posts[0].t, 60)}`,
       body: `<div class="crumbs"><a href="${root}companies/">회사</a></div>
@@ -298,7 +312,7 @@ ${slice.map(p => postHtml(p, root)).join('\n')}${pg}`
       await write(`post/${p.n}/`, page({
         depth: 2, route: `post/${p.n}/`, title: p.t, desc: p.b || p.t,
         body: `<div class="crumbs"><a href="../../feed/">최신 글</a></div><h1>${esc(p.t)}</h1>
-<p class="note">${p.cpid != null ? `<a href="../../company/${p.cpid}/">${esc(p.cp)}</a>` : esc(p.cp)} · ${p.cid != null ? `<a href="../../topic/${p.cid}/">${esc(p.cn)}</a>` : esc(p.cn)} · ${esc(p.nn)} · <time datetime="${esc(p.d)}">${esc(p.d)}</time></p>
+<p class="note">${p.cs ? `<a href="${cUrl('../../', p.cs)}">${esc(p.cp)}</a>` : esc(p.cp)} · ${p.cid != null ? `<a href="../../topic/${p.cid}/">${esc(p.cn)}</a>` : esc(p.cn)} · ${esc(p.nn)} · <time datetime="${esc(p.d)}">${esc(p.d)}</time></p>
 <div class="post"><div class="body">${esc(p.b)}</div></div>`
       }), p.d);
     }
@@ -313,7 +327,7 @@ ${slice.map(p => postHtml(p, root)).join('\n')}${pg}`
   if (urls.length > 50000) console.warn('sitemap exceeds 50,000 URLs; truncating');
   await writeFile(path.join(OUT, 'sitemap.xml'),
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    urls.slice(0, 50000).map(([r, m]) => `<url><loc>${esc(SITE + '/' + r)}</loc>${m ? `<lastmod>${esc(m)}</lastmod>` : ''}</url>`).join('\n') + '\n</urlset>\n');
+    urls.slice(0, 50000).map(([r, m]) => `<url><loc>${esc(SITE + '/' + encPath(r))}</loc>${m ? `<lastmod>${esc(m)}</lastmod>` : ''}</url>`).join('\n') + '\n</urlset>\n');
   await writeFile(path.join(OUT, 'robots.txt'), `User-agent: *\nAllow: /\nSitemap: ${SITE}/sitemap.xml\n`);
   console.log(`done: ${urls.length} indexable URLs, ${companies.size} companies, ${topics.size} topics`);
 }

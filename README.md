@@ -29,10 +29,11 @@ npx serve docs                   # 로컬 미리보기
 파비콘: `public/` 에 `favicon.ico`, `favicon.svg`, `favicon.png`, `apple-touch-icon.png` 중 있는 파일을 두면 모든 페이지의 `<head>` 에 자동으로 링크됩니다. `public/` 이나 `build.mjs` 를 `main` 에 푸시하면 워크플로가 자동으로 다시 빌드합니다.
 
 ## 페이지
-`/` · `/feed/` `/feed/2/` … · `/companies/` · `/company/{회사ID}/` · `/topics/` · `/topic/{카테고리ID}/` · `404.html` · `sitemap.xml` · `robots.txt`
+`/` · `/feed/` `/feed/2/` … · `/companies/` · `/company/{회사명}/` · `/topics/` · `/topic/{카테고리ID}/` · `404.html` · `sitemap.xml` · `robots.txt`
 목록은 모두 50개씩 페이지로 나뉘고, JS 없이 일반 링크로만 이동합니다. 글 3개 미만인 회사 페이지는 `noindex` 이며 sitemap 에서 빠집니다.
 
 ## 알아둘 점
+- 회사는 이름(앞뒤 공백 제거, 유니코드 NFC 정규화)으로 식별합니다. 회사 ID는 쓰지 않습니다. URL은 이름 그대로 쓰되, 특수문자(`/`, 공백, 따옴표 등)가 있으면 정리한 이름 뒤에 이름의 해시 6자리를 붙여 빌드 순서와 무관하게 항상 같은 주소가 되게 합니다. 회사 이름이 바뀌면 새 회사 페이지가 생깁니다.
 - 글 ID는 "한 빌드 내에서만 유일"이라고 해서 글 단독 URL은 기본으로 끄고, 글은 목록 안에서 펼쳐 봅니다. 글 ID가 빌드 간에도 유지된다면 `POST_PAGES=1` 로 `/post/{id}/` 를 켤 수 있습니다.
 - 서버의 limit(1000)과 `PAGE_SIZE` 가 다르면 건너뛰는 글이 생기니 같게 유지하세요. 수집 글이 기대(1만 개)보다 적으면 빌드 로그에 경고가 나옵니다.
 - 인증 키는 로그와 오류 메시지에 출력되지 않습니다. 핵심 API가 실패하거나 비어 있으면 빌드가 실패해 기존 사이트가 유지됩니다.

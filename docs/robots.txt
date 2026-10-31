@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://powerfulh.github.io/curtain-community/sitemap.xml

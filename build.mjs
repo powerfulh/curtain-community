@@ -121,6 +121,12 @@ h2{font-size:18px;margin:36px 0 12px}
 .post .meta{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px;font-size:13px;color:var(--mut)}
 .post[open] summary{border-bottom:1px solid var(--line)}
 .post .body{padding:14px 16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.post summary.has-img{display:flex;gap:12px;align-items:flex-start}
+.post .txt{flex:1;min-width:0}
+.post .snip{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;font-size:14px;line-height:1.5;color:var(--mut);overflow-wrap:anywhere}
+.post .thumb{flex:none;width:96px;height:96px;object-fit:cover;border-radius:8px;background:var(--ac-soft)}
+.imgs{display:grid;gap:8px;padding:14px 16px 0}
+.imgs img{display:block;width:100%;max-height:80vh;object-fit:contain;border-radius:8px;background:var(--ac-soft)}
 .perma{margin:0;padding:0 16px 14px;font-size:13px}
 .pager{display:flex;gap:16px;justify-content:center;align-items:center;margin:22px 0 0;font-size:15px}
 .pager span{color:var(--mut)}
@@ -140,7 +146,7 @@ details.tbl summary{cursor:pointer;color:var(--ac);font-size:14px;margin-top:10p
 .more{margin-top:14px}.note{color:var(--mut);font-size:14px}
 .crumbs{font-size:14px;color:var(--mut);margin-bottom:10px}
 footer{border-top:1px solid var(--line);color:var(--mut);font-size:13px;padding:20px 0 40px}
-@media (max-width:520px){.bars a{grid-template-columns:96px 1fr 48px;gap:8px}h1{font-size:24px}}
+@media (max-width:520px){.post .thumb{width:72px;height:72px}.bars a{grid-template-columns:96px 1fr 48px;gap:8px}h1{font-size:24px}}
 `;
 
 // ---------- templates ----------
@@ -182,13 +188,24 @@ function pager(root, base, p, pages) {
   return `<nav class="pager" aria-label="페이지 이동">${p > 1 ? a(1, '« 처음') + a(p - 1, '‹ 이전', 'prev') : ''}<span>${p} / ${pages}</span>${p < pages ? a(p + 1, '다음 ›', 'next') + a(pages, '끝 »') : ''}</nav>`;
 }
 
+// Image URLs (img0url..img4url): only https links are used, empty/other values are ignored.
+const imgsOf = p => [p.img0url, p.img1url, p.img2url, p.img3url, p.img4url]
+  .map(u => (typeof u === 'string' ? u.trim() : '')).filter(u => /^https:\/\//i.test(u));
+// Images are hot-linked (not copied into the site); no-referrer avoids hotlink blocking by referer, lazy keeps lists light.
+const imgTag = (u, cls, alt) => `<img${cls ? ` class="${cls}"` : ''} src="${esc(u)}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+const imagesHtml = p => { const im = imgsOf(p); return im.length ? `<div class="imgs">${im.map((u, i) => imgTag(u, '', `${p.t} 이미지 ${i + 1}`)).join('')}</div>` : ''; };
 const postHtml = (p, root) => {
   const c = p.cs ? `<a href="${cUrl(root, p.cs)}">${esc(p.cp)}</a>` : esc(p.cp);
   const t = p.cid != null ? `<a href="${root}topic/${p.cid}/">${esc(p.cn)}</a>` : esc(p.cn);
   const link = POST_PAGES ? `<p class="perma"><a href="${root}post/${p.n}/">이 글만 보기</a></p>` : '';
-  return `<article class="post" id="p-${p.n}"><details><summary><span class="t">${esc(p.t)}</span>
-<span class="meta"><span>${c}</span><span>${t}</span><span>${esc(p.nn)}</span><time datetime="${esc(p.d)}">${esc(p.d)}</time></span></summary>
-<div class="body">${esc(p.b)}</div>${link}</details></article>`;
+  const im = imgsOf(p);
+  const meta = `<span class="meta"><span>${c}</span><span>${t}</span><span>${esc(p.nn)}</span><time datetime="${esc(p.d)}">${esc(p.d)}</time></span>`;
+  // posts with images: first image + a short body excerpt are visible before expanding; others look as before
+  const head = im.length
+    ? `<summary class="has-img"><span class="txt"><span class="t">${esc(p.t)}</span>${p.b ? `<span class="snip">${esc(clip(p.b, 140))}</span>` : ''}${meta}</span>${imgTag(im[0], 'thumb', '')}</summary>`
+    : `<summary><span class="t">${esc(p.t)}</span>\n${meta}</summary>`;
+  return `<article class="post" id="p-${p.n}"><details>${head}
+${imagesHtml(p)}<div class="body">${esc(p.b)}</div>${link}</details></article>`;
 };
 const barRow = (href, label, count, max) =>
   `<li><a href="${href}"><span class="n">${esc(label)}</span><span class="bar" style="--w:${Math.max(1, Math.round(count / max * 100))}%"></span><span class="c">${num(count)}</span></a></li>`;
@@ -372,7 +389,7 @@ ${slice.map(p => postHtml(p, root)).join('\n')}${pg}`
         depth: 2, route: `post/${p.n}/`, title: p.t, desc: p.b || p.t,
         body: `<div class="crumbs"><a href="../../feed/">최신 글</a></div><h1>${esc(p.t)}</h1>
 <p class="note">${p.cs ? `<a href="${cUrl('../../', p.cs)}">${esc(p.cp)}</a>` : esc(p.cp)} · ${p.cid != null ? `<a href="../../topic/${p.cid}/">${esc(p.cn)}</a>` : esc(p.cn)} · ${esc(p.nn)} · <time datetime="${esc(p.d)}">${esc(p.d)}</time></p>
-<div class="post"><div class="body">${esc(p.b)}</div></div>`
+<div class="post">${imagesHtml(p)}<div class="body">${esc(p.b)}</div></div>`
       }), p.d);
     }
   }
